@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Market Data WebSocket Client</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 20px;
+            border-radius: 5px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        h1, h2 {
+            color: #333;
+            padding-bottom: 10px;
+        }
+        h1 {
+            border-bottom: 1px solid #ddd;
+        }
+        #status {
+            margin: 10px 0;
+            padding: 10px;
+            border-radius: 4px;
+        }
+        .connected {
+            background-color: #d4edda;
+            color: #155724;
+        }
+        .disconnected {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+        .connecting {
+            background-color: #fff3cd;
+            color: #856404;
+        }
+        #dataTable {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        #dataTable th, #dataTable td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+        #dataTable th {
+            background-color: #f2f2f2;
+        }
+        #dataTable tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+        #dataTable tr:hover {
+            background-color: #f1f1f1;
+        }
+        .controls {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin: 15px 0;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 8px 16px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        .btn-red {
+            background-color: #f44336;
+        }
+        .btn-red:hover {
+            background-color: #d32f2f;
+        }
+        .btn-blue {
+            background-color: #2196F3;
+        }
+        .btn-blue:hover {
+            background-color: #0b7dda;
+        }
+        .exchange-controls {
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 15px;
+            margin-top: 15px;
+            background-color: #f9f9f9;
+        }
+        .log-container {
+            height: 150px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 10px;
+            margin-top: 15px;
+            background-color: #f5f5f5;
+            font-family: monospace;
+        }
+        .log-entry {
+            margin: 5px 0;
+            padding: 3px 0;
+            border-bottom: 1px solid #eee;
+        }
+        .info {
+            color: #0c5460;
+        }
+        .error {
+            color: #721c24;
+        }
+        .success {
+            color: #155724;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Market Data WebSocket Client</h1>
+        
+        <div id="status" class="disconnected">Disconnected</div>
+        
+        <div class="controls">
+            <button id="connectBtn">Connect</button>
+            <button id="disconnectBtn" disabled>Disconnect</button>
+        </div>
+        
+        <div id="exchangeControls" class="exchange-controls" style="display:none;">
+            <h2>Subscription Controls</h2>
+            <p>Select which market data feeds to subscribe to:</p>
+            <div id="exchangeButtons" class="controls">
+                <!-- Exchange subscription buttons will be added here -->
+            </div>
+        </div>
+        
+        <h2>System Log</h2>
+        <div id="logContainer" class="log-container">
+            <!-- Log entries will be displayed here -->
+        </div>
+        
+        <h2>Market Data</h2>
+        <table id="dataTable">
+            <thead>
+                <tr>
+                    <th>Exchange Type</th>
+                    <th>Token</th>
+                    <th>Last Traded Price</th>
+                    <th>Timestamp</th>
+                </tr>
+            </thead>
+            <tbody id="dataBody">
+                <!-- Data will be added here dynamically -->
+            </tbody>
+        </table>
+    </div>
+
+    <script>
+        // DOM Elements
+        const statusEl = document.getElementById('status');
+        const connectBtn = document.getElementById('connectBtn');
+        const disconnectBtn = document.getElementById('disconnectBtn');
+        const dataBody = document.getElementById('dataBody');
+        const exchangeControls = document.getElementById('exchangeControls');
+        const exchangeButtons = document.getElementById('exchangeButtons');
+        const logContainer = document.getElementById('logContainer');
+        
+        // State variables
+        let socket = null;
+        let availableExchanges = [];
+        let subscribedExchanges = new Set();
+        
+        // Store latest data for each token to update the table
+        const latestData = {};
+        
+        // Add a log entry to the log container
+        function addLogEntry(message, type = 'info') {
+            const logEntry = document.createElement('div');
+            logEntry.className = `log-entry ${type}`;
+            logEntry.textContent = `${new Date().toLocaleTimeString()} - ${message}`;
+            logContainer.appendChild(logEntry);
+            logContainer.scrollTop = logContainer.scrollHeight; // Auto-scroll to bottom
+        }
+        
+        // Create exchange subscription buttons
+        function createExchangeButtons(exchanges) {
+            // Clear existing buttons
+            exchangeButtons.innerHTML = '';
+            
+            exchanges.forEach(exchange => {
+                // Create subscribe button
+                const subBtn = document.createElement('button');
+                subBtn.className = 'btn-blue';
+                subBtn.textContent = `Subscribe ${exchange.toUpperCase()}`;
+                subBtn.addEventListener('click', () => subscribeToExchange(exchange));
+                exchangeButtons.appendChild(subBtn);
+                
+                // Create unsubscribe button
+                const unsubBtn = document.createElement('button');
+                unsubBtn.className = 'btn-red';
+                unsubBtn.textContent = `Unsubscribe ${exchange.toUpperCase()}`;
+                unsubBtn.addEventListener('click', () => unsubscribeFromExchange(exchange));
+                exchangeButtons.appendChild(unsubBtn);
+            });
+        }
+        
+        // Subscribe to an exchange
+        function subscribeToExchange(exchange) {
+            if (!socket || socket.readyState !== WebSocket.OPEN) {
+                addLogEntry('Not connected to server', 'error');
+                return;
+            }
+            
+            const command = {
+                command: 'subscribe',
+                exchange: exchange
+            };
+            
+            socket.send(JSON.stringify(command));
+            addLogEntry(`Subscribing to ${exchange}...`);
+        }
+        
+        // Unsubscribe from an exchange
+        function unsubscribeFromExchange(exchange) {
+            if (!socket || socket.readyState !== WebSocket.OPEN) {
+                addLogEntry('Not connected to server', 'error');
+                return;
+            }
+            
+            const command = {
+                command: 'unsubscribe',
+                exchange: exchange
+            };
+            
+            socket.send(JSON.stringify(command));
+            addLogEntry(`Unsubscribing from ${exchange}...`);
+        }
+        
+        // Handle response messages from the server
+        function handleServerMessage(data) {
+            // Check if it's a market data message
+            if (data.exchange_type !== undefined && data.token !== undefined) {
+                // Create a unique key for this token
+                const key = `${data.exchange_type}-${data.token}`;
+                
+                // Store the latest data
+                latestData[key] = data;
+                
+                // Update the table
+                updateTable();
+                return;
+            }
+            
+            // Check if it's a server info message
+            if (data.type === 'info') {
+                addLogEntry(data.message, 'info');
+                
+                // If available exchanges were provided, create the exchange buttons
+                if (data.available_exchanges) {
+                    availableExchanges = data.available_exchanges;
+                    createExchangeButtons(availableExchanges);
+                    exchangeControls.style.display = 'block';
+                }
+                return;
+            }
+            
+            // Check if it's a response to a command
+            if (data.status) {
+                if (data.status === 'success') {
+                    addLogEntry(data.message, 'success');
+                    
+                    // Update subscribed exchanges
+                    if (data.message.startsWith('Subscribed to')) {
+                        const exchange = data.message.split(' ')[2];
+                        subscribedExchanges.add(exchange);
+                    } else if (data.message.startsWith('Unsubscribed from')) {
+                        const exchange = data.message.split(' ')[2];
+                        subscribedExchanges.delete(exchange);
+                    }
+                } else {
+                    addLogEntry(data.message, 'error');
+                }
+                return;
+            }
+            
+            // If we got here, it's an unknown message format
+            addLogEntry(`Received unknown message format: ${JSON.stringify(data)}`, 'info');
+        }
+        
+        // Connect to WebSocket server
+        connectBtn.addEventListener('click', () => {
+            if (socket) return;
+            
+            // Clear previous data
+            Object.keys(latestData).forEach(key => delete latestData[key]);
+            dataBody.innerHTML = '';
+            logContainer.innerHTML = '';
+            
+            statusEl.className = 'connecting';
+            statusEl.textContent = 'Connecting...';
+            addLogEntry('Connecting to WebSocket server...');
+            
+            // Connect to the WebSocket proxy server
+            socket = new WebSocket('ws://localhost:8765');
+            
+            socket.onopen = () => {
+                statusEl.className = 'connected';
+                statusEl.textContent = 'Connected to WebSocket Server';
+                connectBtn.disabled = true;
+                disconnectBtn.disabled = false;
+                addLogEntry('Connected to WebSocket server', 'success');
+            };
+            
+            socket.onclose = () => {
+                statusEl.className = 'disconnected';
+                statusEl.textContent = 'Disconnected from WebSocket Server';
+                connectBtn.disabled = false;
+                disconnectBtn.disabled = true;
+                exchangeControls.style.display = 'none';
+                socket = null;
+                addLogEntry('Disconnected from WebSocket server');
+            };
+            
+            socket.onerror = (error) => {
+                console.error('WebSocket Error:', error);
+                statusEl.className = 'disconnected';
+                statusEl.textContent = 'Error: Could not connect to WebSocket Server';
+                addLogEntry('WebSocket connection error', 'error');
+            };
+            
+            socket.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    handleServerMessage(data);
+                } catch (error) {
+                    console.error('Error parsing message:', error);
+                    addLogEntry(`Error parsing message: ${error.message}`, 'error');
+                }
+            };
+        });
+        
+        // Disconnect from WebSocket server
+        disconnectBtn.addEventListener('click', () => {
+            if (socket) {
+                addLogEntry('Disconnecting from WebSocket server...');
+                socket.close();
+            }
+        });
+        
+        // Update the table with the latest data
+        function updateTable() {
+            // Clear existing data
+            dataBody.innerHTML = '';
+            
+            // Add the latest data for each token
+            Object.values(latestData).forEach(data => {
+                const row = document.createElement('tr');
+                
+                row.innerHTML = `
+                    <td>${data.exchange_type}</td>
+                    <td>${data.token}</td>
+                    <td>${data.last_traded_price}</td>
+                    <td>${data.timestamp}</td>
+                `;
+                
+                dataBody.appendChild(row);
+            });
+        }
+        
+        // Add initial log entry
+        addLogEntry('Market Data WebSocket Client loaded', 'info');
+    </script>
+</body>
+</html>
