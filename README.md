@@ -39,30 +39,49 @@ The WebSocket proxy server provides a simple interface for clients to connect an
    ```
 3. Receive real-time market data
 
+## WebSocket URL and Testing
+
+By default, the WebSocket proxy server runs on port 8765 and binds to all interfaces, making it accessible from any device on your network.
+
+### Connection URL
+
+- **Local usage**: `ws://localhost:8765`
+- **LAN usage**: `ws://your-local-ip:8765` (e.g., `ws://192.168.1.100:8765`)
+
+### Testing the WebSocket Server
+
+You can test the WebSocket server in several ways:
+
+1. **Using the included HTML client**:
+   - Open `client.html` in a web browser
+   - The client will automatically connect to the WebSocket server at `ws://localhost:8765`
+   - You will see real-time market data display once connected
+
+2. **Using WebSocket testing tools**:
+   - [Websocat](https://github.com/vi/websocat) (command-line tool): 
+     ```
+     websocat ws://localhost:8765
+     ```
+   - [Postman](https://www.postman.com/) (GUI tool):
+     - Create a new WebSocket request to `ws://localhost:8765`
+     - Send a subscription message: `{"command": "subscribe", "exchange": "nse"}`
+
+3. **Using browser developer tools**:
+   - Open your browser's developer console (F12)
+   - Execute the following JavaScript:
+     ```javascript
+     const ws = new WebSocket('ws://localhost:8765');
+     ws.onopen = () => {
+       console.log('Connected');
+       ws.send(JSON.stringify({command: 'subscribe', exchange: 'nse'}));
+     };
+     ws.onmessage = (event) => console.log(JSON.parse(event.data));
+     ```
+
 ## Client Example
 
 A simple HTML client is included in the repository (`client.html`). Open it in a web browser to view the real-time market data stream.
 
 ## License
 
-MIT License
-
-Copyright (c) 2025 Marketcalls
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
